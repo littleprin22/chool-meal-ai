@@ -292,6 +292,18 @@
             insightPanel.classList.remove('hidden');
             aiResponseArea.innerHTML = '<p class="text-xs animate-pulse text-indigo-400"><i class="fas fa-cogs"></i> Gemini AI가 오늘의 급식을 분석하고 있습니다...</p>';
 
+            // 추가된 부분: 채팅창 미리보기 환경(blob:)일 경우 에러 대신 안내 메시지 출력
+            if (window.location.protocol === 'blob:') {
+                aiResponseArea.innerHTML = `<div class="p-4 bg-orange-50 border border-orange-200 rounded-xl text-orange-700 text-sm leading-relaxed">
+                    <p class="font-bold mb-1"><i class="fas fa-info-circle"></i> 미리보기 화면 안내</p>
+                    이 미리보기 화면에서는 API 보안을 위해 분리한 백엔드 서버가 동작하지 않습니다.<br>
+                    <b>배포하신 Vercel 사이트 주소에 직접 접속하셔서 AI 분석을 테스트해 주세요!</b>
+                </div>`;
+                aiBtn.disabled = false;
+                aiBtn.innerHTML = '<i class="fas fa-magic"></i> AI 분석';
+                return;
+            }
+
             const prompt = `당신은 학교 영양사입니다. 다음 메뉴를 분석해 주세요.
             학교: ${selectedSchool.name} / 메뉴: ${currentMealData.DDISH_NM} / 칼로리: ${currentMealData.CAL_INFO}
             1. 영양 성분 장점 (단백질, 비타민 등)
@@ -300,32 +312,32 @@
             친절하고 학생이 듣는 것처럼 부드럽게 답변하세요. 한국어로 답변하세요.`;
 
             try {
-                let retries = 0;
-                let resultText = '';
-                while(retries < 5) {
-                    try {
-                        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`;
-                        const response = await fetch(apiUrl, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-                        });
-                        const data = await response.json();
-                        resultText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-                        if (resultText) break;
-                    } catch (e) {
-                        retries++;
-                        await new Promise(r => setTimeout(r, Math.pow(2, retries) * 1000));
-                    }
+                // 수정된 부분: 구글 API를 직접 찌르지 않고, 우리가 만든 Vercel 백엔드로 요청을 보냅니다!
+                const response = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt: prompt })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
 
-                if (resultText) {
+                const data = await response.json();
+                
+                if (data.resultText) {
                     aiResponseArea.innerHTML = `<div class="prose prose-sm max-w-none text-gray-700">
-                        ${resultText.replace(/\*\*(.*?)\*\*/g, '<strong class="text-indigo-700">$1</strong>').replace(/\n/g, '<br>')}
+                        ${data.resultText.replace(/\*\*(.*?)\*\*/g, '<strong class="text-indigo-700">$1</strong>').replace(/\n/g, '<br>')}
                     </div>`;
-                } else { throw new Error(); }
+                } else if (data.error) {
+                    throw new Error(data.error);
+                } else {
+                     throw new Error('데이터 파싱 실패');
+                }
+
             } catch (err) {
-                aiResponseArea.innerHTML = '<p class="text-xs text-red-400"><i class="fas fa-exclamation-circle"></i> AI 분석 기능을 현재 사용할 수 없습니다.</p>';
+                console.error("AI 분석 에러:", err);
+                aiResponseArea.innerHTML = `<p class="text-xs text-red-400"><i class="fas fa-exclamation-circle"></i> AI 분석 오류: ${err.message || '서버와 통신할 수 없습니다.'}</p>`;
             } finally {
                 aiBtn.disabled = false;
                 aiBtn.innerHTML = '<i class="fas fa-magic"></i> AI 분석';
