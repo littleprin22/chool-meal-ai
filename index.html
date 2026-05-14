@@ -49,8 +49,11 @@
     <div class="max-w-4xl mx-auto">
         <!-- Header -->
         <header class="text-center mb-8 flex flex-col items-center">
-            <h1 class="text-3xl font-bold text-indigo-600 flex items-center justify-center gap-2 mb-2">
-                <i class="fas fa-utensils"></i> 우리 학교 급식 알리미 <span class="text-sm bg-indigo-100 px-2 py-1 rounded-lg">AI+</span>
+            <h1 class="text-3xl font-bold text-indigo-600 flex items-center justify-center gap-3 mb-2">
+                <!-- ⬇️ 포크/나이프 아이콘 대신 왕곡초 로고 이미지를 넣었습니다 -->
+                <!-- 예쁘게 보이도록 동그란 테두리(rounded-full)와 그림자(shadow-sm) 효과를 주었습니다 -->
+                <img src="https://i.ibb.co/RGGK87Pf/image.jpg" alt="왕곡초 마크" class="w-20 h-20 md:w-24 md:h-24 object-contain bg-white rounded-full p-1.5 shadow-md border-2 border-indigo-100 transition-transform hover:scale-105">
+                우리 학교 급식 알리미 <span class="text-sm bg-indigo-100 px-2 py-1 rounded-lg">AI+</span>
             </h1>
             <p class="text-gray-500 text-sm md:text-base">전국 학교 급식 정보와 AI 식단 분석</p>
         </header>
@@ -66,7 +69,7 @@
             <div class="flex flex-col md:flex-row gap-3 relative">
                 <div class="relative flex-1">
                     <input type="text" id="schoolInput" autocomplete="off"
-                           placeholder="학교명을 입력하세요 (예: 봉수초, 강남중)" 
+                           placeholder="학교명을 입력하세요 (예: 💖왕곡초등학교)" 
                            class="w-full p-4 pl-5 border border-gray-200 rounded-2xl search-input transition-all">
                     <div id="searchResults" class="absolute z-20 w-full mt-2 bg-white border border-gray-100 rounded-2xl shadow-xl hidden max-h-72 overflow-y-auto custom-scrollbar"></div>
                 </div>
@@ -169,8 +172,9 @@
     </div>
 
     <script>
-        // API 설정: HTML에는 더 이상 Gemini 키가 존재하지 않습니다! (보안 강화)
+        // API 설정
         const NEIS_API_KEY = '3f1c398426eb4288b86839b053513f3f';
+        const GEMINI_API_KEY = ''; 
         const BASE_URL = 'https://open.neis.go.kr/hub';
         
         let selectedSchool = { atptCode: '', schoolCode: '', name: '' };
@@ -276,7 +280,6 @@
             document.getElementById('nutritionInfo').innerHTML = meal.NTR_INFO ? meal.NTR_INFO.replace(/<br\/>/g, ' / ') : '정보 없음';
         }
 
-        // ⭐ 변경된 부분: 구글 API로 직접 요청하지 않고, 우리의 Vercel 서버(/api/analyze)로 요청합니다.
         async function analyzeMeal() {
             if (!currentMealData) return;
 
@@ -297,22 +300,31 @@
             친절하고 학생이 듣는 것처럼 부드럽게 답변하세요. 한국어로 답변하세요.`;
 
             try {
-                // 우리의 백엔드 API로 프롬프트 전송
-                const response = await fetch('/api/analyze', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt: prompt })
-                });
-                
-                const data = await response.json();
+                let retries = 0;
+                let resultText = '';
+                while(retries < 5) {
+                    try {
+                        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`;
+                        const response = await fetch(apiUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                        });
+                        const data = await response.json();
+                        resultText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                        if (resultText) break;
+                    } catch (e) {
+                        retries++;
+                        await new Promise(r => setTimeout(r, Math.pow(2, retries) * 1000));
+                    }
+                }
 
-                if (data.resultText) {
+                if (resultText) {
                     aiResponseArea.innerHTML = `<div class="prose prose-sm max-w-none text-gray-700">
-                        ${data.resultText.replace(/\*\*(.*?)\*\*/g, '<strong class="text-indigo-700">$1</strong>').replace(/\n/g, '<br>')}
+                        ${resultText.replace(/\*\*(.*?)\*\*/g, '<strong class="text-indigo-700">$1</strong>').replace(/\n/g, '<br>')}
                     </div>`;
-                } else { throw new Error(data.error || '분석 실패'); }
+                } else { throw new Error(); }
             } catch (err) {
-                console.error(err);
                 aiResponseArea.innerHTML = '<p class="text-xs text-red-400"><i class="fas fa-exclamation-circle"></i> AI 분석 기능을 현재 사용할 수 없습니다.</p>';
             } finally {
                 aiBtn.disabled = false;
